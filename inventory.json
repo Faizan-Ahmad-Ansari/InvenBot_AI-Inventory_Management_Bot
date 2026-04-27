@@ -1,0 +1,151 @@
+[
+  {
+    "item": "chair",
+    "stock_in": 50,
+    "stock_out": 10,
+    "cost_price": 800,
+    "selling_price": 1200,
+    "quantity_sold": 10,
+    "sales_history": [
+      {
+        "quantity": 6,
+        "date": "2026-04-15"
+      },
+      {
+        "quantity": 4,
+        "date": "2026-04-14"
+      }
+    ]
+  },
+  {
+    "item": "table",
+    "stock_in": 30,
+    "stock_out": 8,
+    "cost_price": 3000,
+    "selling_price": 5000,
+    "quantity_sold": 8,
+    "sales_history": [
+      {
+        "quantity": 5,
+        "date": "2026-04-15"
+      },
+      {
+        "quantity": 3,
+        "date": "2026-04-13"
+      }
+    ]
+  },
+  {
+    "item": "bottle",
+    "stock_in": 100,
+    "stock_out": 50,
+    "cost_price": 20,
+    "selling_price": 50,
+    "quantity_sold": 50,
+    "sales_history": [
+      {
+        "quantity": 50,
+        "date": "2026-04-10"
+      }
+    ]
+  },
+  {
+    "item": "bag",
+    "stock_in": 40,
+    "stock_out": 5,
+    "cost_price": 500,
+    "selling_price": 900,
+    "quantity_sold": 5,
+    "sales_history": [
+      {
+        "quantity": 5,
+        "date": "2026-04-14"
+      }
+    ]
+  },
+  {
+    "item": "monitor",
+    "stock_in": 10,
+    "stock_out": 10,
+    "cost_price": 8000,
+    "selling_price": 12000,
+    "quantity_sold": 10,
+    "sales_history": [
+      {
+        "quantity": 10,
+        "date": "2026-04-12"
+      }
+    ]
+  },
+  {
+    "item": "keyboard",
+    "stock_in": 60,
+    "stock_out": 20,
+    "cost_price": 700,
+    "selling_price": 1200,
+    "quantity_sold": 20,
+    "sales_history": [
+      {
+        "quantity": 10,
+        "date": "2026-04-15"
+      },
+      {
+        "quantity": 10,
+        "date": "2026-04-09"
+      }
+    ]
+  },
+  {
+    "item": "mouse",
+    "stock_in": 80,
+    "stock_out": 70,
+    "cost_price": 300,
+    "selling_price": 600,
+    "quantity_sold": 70,
+    "sales_history": [
+      {
+        "quantity": 30,
+        "date": "2026-04-15"
+      },
+      {
+        "quantity": 40,
+        "date": "2026-04-08"
+      }
+    ]
+  },
+  {
+    "item": "speaker",
+    "stock_in": 25,
+    "stock_out": 3,
+    "cost_price": 1500,
+    "selling_price": 2500,
+    "quantity_sold": 3,
+    "sales_history": [
+      {
+        "quantity": 3,
+        "date": "2026-04-14"
+      }
+    ]
+  },
+  {
+    "item": "shoes",
+    "stock_in": 20,
+    "stock_out": 5,
+    "cost_price": 1000,
+    "selling_price": 2000,
+    "quantity_sold": 5,
+    "stock_history": [
+      {
+        "quantity": 20,
+        "date": "2026-04-23"
+      }
+    ],
+    "sales_history": [
+      {
+        "quantity": 5,
+        "date": "2026-04-23",
+        "actual_price": 500
+      }
+    ]
+  }
+]

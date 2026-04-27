@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InvenBot OS — AI Inventory Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- Ambient Animated Background -->
+  <div class="ambient-bg">
+    <div class="neon-orb drop-1"></div>
+    <div class="neon-orb drop-2"></div>
+    <div class="neon-orb drop-3"></div>
+  </div>
+
+  <div class="os-canvas">
+
+    <!-- Topbar (Minimalist) -->
+    <header class="os-header">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+            <polyline points="9 22 9 12 15 12 15 22" />
+          </svg>
+        </div>
+        <span class="logo-text">InvenBot AI</span>
+      </div>
+      <div class="header-actions">
+        <div class="status-pill glass-panel" id="serverStatus">
+          <div class="status-dot inactive" id="serverDot"></div>
+          <span id="serverStatusText">Connecting…</span>
+        </div>
+        <button class="icon-btn glass-panel hidden-mobile" id="toggleDashboardBtn" title="Toggle Dashboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <line x1="3" y1="9" x2="21" y2="9" />
+            <line x1="9" y1="21" x2="9" y2="9" />
+          </svg>
+        </button>
+        <button class="icon-btn glass-panel" id="clearChatBtn" title="Clear Chat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Floating Dashboard (Hidden by default or toggled) -->
+    <div class="floating-dashboard glass-panel" id="floatingDashboard">
+
+      <!-- Section 1: Stats -->
+      <div class="dash-section">
+        <p class="dash-label">Stats</p>
+        <div class="stat-row"><span>Items</span><strong id="statItems">—</strong></div>
+        <div class="stat-row"><span>Available</span><strong id="statStockIn">—</strong></div>
+        <div class="stat-row"><span>Sold</span><strong id="statSold">—</strong></div>
+        <div class="dash-actions">
+          <button class="neon-btn outline small" id="refreshStatsBtn">Sync</button>
+          <button class="neon-btn outline small" id="exportBtn">Export DB</button>
+        </div>
+      </div>
+
+      <div class="dash-divider"></div>
+
+      <!-- Section 2: P&L Analysis -->
+      <div class="dash-section">
+        <p class="dash-label">Profit &amp; Loss</p>
+        <div id="plContainer" class="pl-list">
+          <span class="pl-loading">Loading...</span>
+        </div>
+        <div class="dash-divider" style="margin: 10px 0 8px"></div>
+        <div class="stat-row profit-row"><span>Total Profit</span><strong id="statProfit">—</strong></div>
+        <div class="stat-row loss-row"><span>Total Loss</span><strong id="statLoss">—</strong></div>
+      </div>
+
+      <div class="dash-divider"></div>
+
+      <!-- Section 3: Alerts -->
+      <div class="dash-section" id="lowStockPanel">
+        <div class="dash-header-row">
+          <p class="dash-label">Alerts</p>
+          <span class="pulse-dot"></span>
+        </div>
+        <div id="lowStockContainer" class="alert-list">
+          <span>Fetching...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Centered Feed -->
+    <main class="feed-container" id="chatArea">
+      <div class="welcome-hero" id="welcomeScreen">
+        <div class="hero-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+            <polyline points="2 17 12 22 22 17" />
+            <polyline points="2 12 12 17 22 12" />
+          </svg>
+        </div>
+        <h1>Command your Inventory</h1>
+        <p>A smart holographic OS for tracking your goods, sales, and analytics.</p>
+        <div class="hero-chips">
+          <button class="chip" data-query="show all inventory">Inventory</button>
+          <button class="chip" data-query="sales from 2026-04-01 to 2026-04-15">Recent Sales</button>
+          <button class="chip" data-query="show profit for all items">Calculations</button>
+        </div>
+      </div>
+
+      <div class="messages-stack" id="messagesContainer"></div>
+
+      <!-- Spacing div so last message isn't hidden behind the massive omnibar -->
+      <div class="feed-spacer"></div>
+    </main>
+
+    <!-- Floating Omnibar -->
+    <footer class="omnibar-wrapper">
+      <div class="quick-commands-bar">
+        <span>Try:</span>
+        <button class="qc-btn" data-query="add 50 laptops at cost 500 sell 800">add 50 laptops...</button>
+        <button class="qc-btn" data-query="sell 5 mice">sell 5 mice</button>
+        <button class="qc-btn" data-query="delete headphones">delete headphones</button>
+        <button class="qc-btn" data-query="help">help</button>
+      </div>
+      <div class="omnibar glass-panel">
+        <textarea id="userInput" class="omni-input" placeholder="Type a command..." rows="1"
+          autocomplete="off"></textarea>
+        <button class="omni-send" id="sendBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+      </div>
+    </footer>
+
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
