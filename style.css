@@ -30,18 +30,14 @@ body {
   overflow: hidden;
 }
 
-/* ===== AMBIENT BACKGROUND ===== */
-.ambient-bg {
-  position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
-}
-.neon-orb { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.4; animation: float 14s infinite ease-in-out; }
-.drop-1 { width: 600px; height: 600px; background: var(--neon-purple); top: -200px; left: -100px; }
-.drop-2 { width: 500px; height: 500px; background: var(--neon-teal); bottom: -150px; right: 50px; animation-delay: -4s; }
-.drop-3 { width: 400px; height: 400px; background: rgba(6, 182, 212, 0.5); top: 50%; left: 50%; transform: translate(-50%, -50%); animation-delay: -8s; }
-
-@keyframes float {
-  0%, 100% { transform: translate(0,0) scale(1); }
-  50% { transform: translate(30px,-30px) scale(1.05); }
+/* ===== CONSTELLATION BACKGROUND ===== */
+#constellationCanvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  width: 100%;
+  height: 100%;
 }
 
 /* ===== GLASS COMPONENT ===== */
@@ -72,6 +68,14 @@ body {
 .status-dot.inactive { background: var(--text-dim); }
 .icon-btn { width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; color: var(--text-sub); transition: var(--trans); }
 .icon-btn:hover { color: #fff; border-color: rgba(255,255,255,0.2); transform: translateY(-2px); }
+
+/* User pill */
+.user-pill { display: flex; align-items: center; gap: 9px; padding: 6px 14px 6px 8px; border-radius: 99px; height: 40px; }
+.user-av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--neon-teal), var(--neon-purple)); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; text-transform: uppercase; }
+.user-name { font-size: 13px; font-weight: 500; color: var(--text-sub); white-space: nowrap; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Signout button — red tint on hover */
+.signout-btn:hover { color: var(--neon-red) !important; border-color: rgba(239,68,68,0.35) !important; background: rgba(239,68,68,0.08) !important; }
 
 /* ===== DASHBOARD (FLOATING) ===== */
 .floating-dashboard {

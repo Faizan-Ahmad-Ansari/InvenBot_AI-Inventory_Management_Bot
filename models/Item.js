@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const itemSchema = new mongoose.Schema({
-  item: { type: String, required: true, unique: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  item: { type: String, required: true },
   stock_in: { type: Number, default: 0 },
   stock_out: { type: Number, default: 0 },
   cost_price: { type: Number, default: 0 },
@@ -18,5 +19,8 @@ const itemSchema = new mongoose.Schema({
     actual_price: Number
   }]
 });
+
+// Each user can have their own item with the same name
+itemSchema.index({ userId: 1, item: 1 }, { unique: true });
 
 module.exports = mongoose.model('Item', itemSchema);

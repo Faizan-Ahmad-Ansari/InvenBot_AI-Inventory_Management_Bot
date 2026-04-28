@@ -4,7 +4,9 @@ const cors = require("cors");
 const fetch = require("node-fetch");
 const path = require("path");
 const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
 const Item = require("./models/Item");
+const User = require("./models/User");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -23,6 +25,22 @@ if (process.env.MONGODB_URI) {
 
 function findIndex(db, name) {
   return db.findIndex(i => i.item.toLowerCase() === name.toLowerCase());
+}
+
+// ── Auth Middleware ───────────────────────────────────────────────────────────
+const JWT_SECRET = process.env.JWT_SECRET || "invenbot_fallback_secret";
+
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer "))
+    return res.status(401).json({ error: "Unauthorized: missing token" });
+  try {
+    const payload = jwt.verify(auth.slice(7), JWT_SECRET);
+    req.userId = payload.id;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Unauthorized: invalid token" });
+  }
 }
 
 const SYSTEM_PROMPT = `You are InvenBot, a smart inventory management AI assistant.
@@ -60,6 +78,7 @@ OUT_OF_STOCK    → data: {}
 FILTER_DATE     → data: { start_date, end_date? }          (filter sales, revenue, profit, or loss by date/range. format: YYYY-MM-DD. translate 'today/yesterday' etc)
 SALES_HISTORY   → data: { item? }                          (show full sales history log for one item or all items)
 STOCK_HISTORY   → data: { item? }                          (show full stock-in history log for one item or all items)
+RESET_INVENTORY → data: {}                                  (permanently delete ALL items, sales, and stock history)
 
 RULES:
 - ALWAYS return valid JSON only — no markdown, no backticks, no extra text
@@ -81,19 +100,32 @@ RULES:
 
 CRITICAL: Your entire response must be a single valid JSON object and nothing else. No markdown, no code fences, no backticks, no intro text, no trailing text. Start with { and end with }.`;
 
-async function buildPrompt(userMsg) {
-  const db = await Item.find().lean();
+async function buildPrompt(userMsg, userId) {
+  const db = await Item.find({ userId }).lean();
+
+  // Filter out bulky history logs to save tokens
+  const minimizedInv = db.map(i => ({
+    item: i.item,
+    stock_in: i.stock_in,
+    stock_out: i.stock_out,
+    current_stock: i.stock_in - i.stock_out,
+    cost_price: i.cost_price,
+    selling_price: i.selling_price,
+    quantity_sold: i.quantity_sold,
+    threshold: i.threshold
+  }));
+
   const inv = db.length > 0
-    ? JSON.stringify(db, null, 2)
+    ? JSON.stringify(minimizedInv, null, 2)
     : "[ No items in inventory yet ]";
   return `CURRENT INVENTORY:\n${inv}\n\nUSER MESSAGE: ${userMsg}`;
 }
 
-async function executeAction(action, data) {
+async function executeAction(action, data, userId) {
   let tableData = null;
   let errorReply = null; // overrides reply when execution fails
-  
-  let db = await Item.find();
+
+  let db = await Item.find({ userId });
 
   switch (action) {
 
@@ -119,6 +151,7 @@ async function executeAction(action, data) {
 
       } else {
         const newItem = new Item({
+          userId,
           item: data.item,
           stock_in: Number(data.quantity),
           stock_out: 0,
@@ -179,7 +212,7 @@ async function executeAction(action, data) {
 
       await db[idx].save();
 
-      const revenue   = salePrice * qty;
+      const revenue = salePrice * qty;
       const pl = (salePrice - db[idx].cost_price) * qty;
 
       tableData = [{
@@ -198,7 +231,7 @@ async function executeAction(action, data) {
     case "DELETE_ITEM": {
       const idx = findIndex(db, data.item);
       if (idx >= 0) {
-        await Item.deleteOne({ _id: db[idx]._id });
+        await Item.deleteOne({ _id: db[idx]._id, userId });
         db.splice(idx, 1);
       }
       break;
@@ -241,7 +274,14 @@ async function executeAction(action, data) {
       const idx = findIndex(db, data.item || "");
       if (idx >= 0) {
         const i = db[idx];
-        const pl = (i.selling_price - i.cost_price) * i.quantity_sold;
+
+        // Calculate total profit/loss from sales history
+        let totalPL = 0;
+        (i.sales_history || []).forEach(s => {
+          const txPrice = s.actual_price != null ? s.actual_price : (i.selling_price || 0);
+          totalPL += s.quantity * (txPrice - (i.cost_price || 0));
+        });
+
         tableData = [{
           item: i.item,
           current_stock: i.stock_in - i.stock_out,
@@ -249,8 +289,8 @@ async function executeAction(action, data) {
           total_sold: i.quantity_sold,
           cost_price: i.cost_price,
           selling_price: i.selling_price,
-          profit: pl > 0 ? pl : 0,
-          loss: pl < 0 ? Math.abs(pl) : 0
+          profit: totalPL > 0 ? totalPL : 0,
+          loss: totalPL < 0 ? Math.abs(totalPL) : 0
         }];
       }
       break;
@@ -277,13 +317,21 @@ async function executeAction(action, data) {
         const idx = findIndex(db, data.item);
         items = idx >= 0 ? [db[idx]] : [];
       }
-      tableData = items.map(i => ({
-        item: i.item,
-        quantity_sold: i.quantity_sold,
-        cost_price: i.cost_price,
-        selling_price: i.selling_price,
-        profit: (i.selling_price - i.cost_price) * i.quantity_sold
-      }));
+      tableData = items.map(i => {
+        let totalPL = 0;
+        (i.sales_history || []).forEach(s => {
+          const txPrice = s.actual_price != null ? s.actual_price : (i.selling_price || 0);
+          totalPL += s.quantity * (txPrice - (i.cost_price || 0));
+        });
+
+        return {
+          item: i.item,
+          quantity_sold: i.quantity_sold,
+          cost_price: i.cost_price,
+          selling_price: i.selling_price,
+          profit: totalPL
+        };
+      });
       break;
     }
     case "SET_THRESHOLD": {
@@ -321,8 +369,14 @@ async function executeAction(action, data) {
     case "SUMMARY": {
       const totalItems = db.length;
       const totalStock = db.reduce((sum, i) => sum + (i.stock_in - i.stock_out), 0);
+
       const totalProfit = db.reduce((sum, i) => {
-        return sum + ((i.selling_price - i.cost_price) * i.quantity_sold);
+        let itemPL = 0;
+        (i.sales_history || []).forEach(s => {
+          const txPrice = s.actual_price != null ? s.actual_price : (i.selling_price || 0);
+          itemPL += s.quantity * (txPrice - (i.cost_price || 0));
+        });
+        return sum + itemPL;
       }, 0);
 
       tableData = [{
@@ -454,6 +508,12 @@ async function executeAction(action, data) {
       break;
     }
 
+    case "RESET_INVENTORY": {
+      await Item.deleteMany({ userId });
+      db = [];
+      tableData = [{ message: "All inventory data has been permanently cleared." }];
+      break;
+    }
     case "FILTER_DATE": {
       if (!data.start_date && !data.end_date) {
         tableData = [{ error: "Please specify a valid date." }];
@@ -473,8 +533,8 @@ async function executeAction(action, data) {
             if (sDate >= start && sDate <= end) {
               // Use actual_price stored per transaction if available
               const txPrice = s.actual_price != null ? s.actual_price : (item.selling_price || 0);
-              qty  += s.quantity;
-              rev  += s.quantity * txPrice;
+              qty += s.quantity;
+              rev += s.quantity * txPrice;
               cost += s.quantity * (item.cost_price || 0);
             }
           });
@@ -502,7 +562,7 @@ async function executeAction(action, data) {
 }
 
 // Intercepts common date queries so they never need remote parsing
-async function tryLocalIntent(message) {
+async function tryLocalIntent(message, userId) {
   const msg = message.toLowerCase().trim();
 
   // Match ISO date: YYYY-MM-DD
@@ -510,7 +570,7 @@ async function tryLocalIntent(message) {
   // Match natural dates: "april 14", "14 april", "apr 14"
   const naturalDate = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\b|\b(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i;
 
-  const monthMap = { jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,april:4,may:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,sep:9,september:9,oct:10,october:10,nov:11,november:11,dec:12,december:12 };
+  const monthMap = { jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12 };
 
   // Keywords indicating date-based analysis
   const isDateQuery = /profit|loss|p&l|pnl|revenue|sales|sold|report/.test(msg);
@@ -546,20 +606,20 @@ async function tryLocalIntent(message) {
   // Natural date (e.g., "april 14")
   if (!startDate) {
     const nm = msg.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})\b/i) ||
-               msg.match(/\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/i);
+      msg.match(/\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/i);
     if (nm) {
       let month, day;
       if (isNaN(nm[1])) { month = monthMap[nm[1].toLowerCase()]; day = parseInt(nm[2]); }
       else { day = parseInt(nm[1]); month = monthMap[nm[2].toLowerCase()]; }
       const year = new Date().getFullYear();
-      startDate = endDate = `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+      startDate = endDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     }
   }
 
   if (!startDate) return null; // couldn't parse a date — fallback to remote processing
 
   // Execute FILTER_DATE directly
-  const { tableData } = await executeAction("FILTER_DATE", { start_date: startDate, end_date: endDate });
+  const { tableData } = await executeAction("FILTER_DATE", { start_date: startDate, end_date: endDate }, userId);
 
   const label = startDate === endDate ? startDate : `${startDate} → ${endDate}`;
   const hasData = tableData && tableData.length > 0 && !tableData[0].message;
@@ -570,11 +630,12 @@ async function tryLocalIntent(message) {
   return { action: "FILTER_DATE", reply, items: tableData };
 }
 
-app.post("/api/chat", async (req, res) => {
+app.post("/api/chat", requireAuth, async (req, res) => {
   const { message } = req.body;
+  const userId = req.userId;
   if (!message) return res.status(400).json({ error: "Missing message" });
 
-  const localResult = await tryLocalIntent(message);
+  const localResult = await tryLocalIntent(message, userId);
   if (localResult) return res.json(localResult);
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -582,7 +643,7 @@ app.post("/api/chat", async (req, res) => {
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   try {
-    const promptText = await buildPrompt(message);
+    const promptText = await buildPrompt(message, userId);
     const geminiRes = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -625,7 +686,7 @@ app.post("/api/chat", async (req, res) => {
     }
 
     // Execute action on database
-    const { tableData, errorReply } = await executeAction(parsed.action, parsed.data || {});
+    const { tableData, errorReply } = await executeAction(parsed.action, parsed.data || {}, userId);
 
     res.json({
       action: parsed.action || "UNKNOWN",
@@ -639,7 +700,55 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-app.get("/api/inventory", async (_req, res) => res.json(await Item.find().lean()));
+app.get("/api/inventory", requireAuth, async (req, res) => res.json(await Item.find({ userId: req.userId }).lean()));
+
+// ── Auth Routes ──────────────────────────────────────────────────────────────
+// (JWT_SECRET defined above in requireAuth middleware)
+
+// POST /api/auth/signup
+app.post("/api/auth/signup", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password)
+      return res.status(400).json({ error: "Name, email and password are required." });
+    if (password.length < 8)
+      return res.status(400).json({ error: "Password must be at least 8 characters." });
+
+    const existing = await User.findOne({ email: email.toLowerCase() });
+    if (existing)
+      return res.status(409).json({ error: "An account with this email already exists." });
+
+    const user = await User.create({ name, email, password });
+    const token = jwt.sign({ id: user._id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: "7d" });
+    res.status(201).json({ token, user: { id: user._id, name: user.name, email: user.email } });
+  } catch (err) {
+    console.error("Signup error:", err.message);
+    res.status(500).json({ error: "Server error during signup." });
+  }
+});
+
+// POST /api/auth/signin
+app.post("/api/auth/signin", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return res.status(400).json({ error: "Email and password are required." });
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user)
+      return res.status(401).json({ error: "Invalid email or password." });
+
+    const match = await user.comparePassword(password);
+    if (!match)
+      return res.status(401).json({ error: "Invalid email or password." });
+
+    const token = jwt.sign({ id: user._id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: "7d" });
+    res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+  } catch (err) {
+    console.error("Signin error:", err.message);
+    res.status(500).json({ error: "Server error during sign in." });
+  }
+});
 
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {

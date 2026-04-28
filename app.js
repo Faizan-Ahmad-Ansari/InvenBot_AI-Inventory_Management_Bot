@@ -16,6 +16,56 @@ const serverStatusText = document.getElementById("serverStatusText");
 const floatingDashboard = document.getElementById("floatingDashboard");
 const toggleDashboardBtn = document.getElementById("toggleDashboardBtn");
 
+// ── Auth guard ─────────────────────────────────────────────────
+(function authGuard() {
+  const token = localStorage.getItem("invenbot_token") || sessionStorage.getItem("invenbot_token");
+  if (!token) {
+    window.location.replace("signin.html");
+    return;
+  }
+
+  // Populate user info in header
+  let firstName = "User";
+  let initial = "U";
+
+  // Try stored user object first
+  const rawUser = localStorage.getItem("invenbot_user") || sessionStorage.getItem("invenbot_user");
+  if (rawUser) {
+    try {
+      const user = JSON.parse(rawUser);
+      firstName = (user.name || "User").split(" ")[0];
+      initial = firstName.charAt(0).toUpperCase();
+    } catch (_) { }
+  } else {
+    // Fallback: decode the JWT payload to get the name
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      firstName = ((payload.name || payload.email || "User").split(" ")[0]).split("@")[0];
+      initial = firstName.charAt(0).toUpperCase();
+    } catch (_) { }
+  }
+
+  const avEl = document.getElementById("userAv");
+  const nameEl = document.getElementById("userName");
+  if (avEl) avEl.textContent = initial;
+  if (nameEl) nameEl.textContent = firstName;
+})();
+
+// ── Signout ────────────────────────────────────────────────────
+document.getElementById("signoutBtn").addEventListener("click", () => {
+  localStorage.removeItem("invenbot_token");
+  localStorage.removeItem("invenbot_user");
+  sessionStorage.removeItem("invenbot_token");
+  sessionStorage.removeItem("invenbot_user");
+  window.location.href = "signin.html";
+});
+
+// ── Auth header helper ──────────────────────────────────────────
+function getAuthHeader() {
+  const token = localStorage.getItem("invenbot_token") || sessionStorage.getItem("invenbot_token");
+  return token ? { "Authorization": "Bearer " + token } : {};
+}
+
 (function init() {
   bindEvents();
   checkServerStatus();
@@ -24,7 +74,7 @@ const toggleDashboardBtn = document.getElementById("toggleDashboardBtn");
 
 async function checkServerStatus() {
   try {
-    const res = await fetch("/api/inventory");
+    const res = await fetch("/api/inventory", { headers: getAuthHeader() });
     if (res.ok) {
       serverDot.className = "status-dot active";
       serverStatusText.textContent = "Online";
@@ -37,7 +87,7 @@ async function checkServerStatus() {
 
 async function loadDashboardStats() {
   try {
-    const res = await fetch("/api/inventory");
+    const res = await fetch("/api/inventory", { headers: getAuthHeader() });
     const data = await res.json();
 
     const items = data.length;
@@ -48,24 +98,23 @@ async function loadDashboardStats() {
     document.getElementById("statStockIn").textContent = availStock.toLocaleString("en-IN");
     document.getElementById("statSold").textContent = sold.toLocaleString("en-IN");
 
-    let totalProfit = 0, totalLoss = 0;
+    let grossProfit = 0, grossLoss = 0;
     const plContainer = document.getElementById("plContainer");
 
     const plRows = data.map(i => {
       let revenue = 0;
       let cost = 0;
-      let itemNet = 0;
-      
+
       (i.sales_history || []).forEach(s => {
         const txPrice = s.actual_price != null ? s.actual_price : (i.selling_price || 0);
         revenue += s.quantity * txPrice;
         cost += s.quantity * (i.cost_price || 0);
-        
+
         const margin = s.quantity * (txPrice - (i.cost_price || 0));
-        if (margin >= 0) totalProfit += margin;
-        else             totalLoss   += Math.abs(margin);
+        if (margin >= 0) grossProfit += margin;
+        else grossLoss += Math.abs(margin);
       });
-      
+
       const pl = revenue - cost;
       return { item: i.item, pl, revenue, cost };
     }).filter(r => r.pl !== 0 || r.revenue > 0);
@@ -85,28 +134,32 @@ async function loadDashboardStats() {
       }).join("");
     }
 
-    document.getElementById("statProfit").textContent = "₹" + totalProfit.toLocaleString("en-IN");
-    document.getElementById("statLoss").textContent   = "₹" + totalLoss.toLocaleString("en-IN");
+    const netProfit = grossProfit - grossLoss;
+    const profitEl = document.getElementById("statProfit");
+    profitEl.textContent = (netProfit >= 0 ? "+" : "-") + "₹" + Math.abs(netProfit).toLocaleString("en-IN");
+    profitEl.style.color = netProfit >= 0 ? "var(--neon-green)" : "var(--neon-red)";
+
+    document.getElementById("statLoss").textContent = "₹" + grossLoss.toLocaleString("en-IN");
 
     // Alerts
     const lowStockContainer = document.getElementById("lowStockContainer");
     const pulseDot = document.querySelector(".pulse-dot");
-    const stockItems = data.map(i => ({...i, current: i.stock_in - (i.quantity_sold||0)}));
-    const low = stockItems.filter(i => i.current <= (i.threshold || 20)).sort((a,b) => a.current - b.current);
+    const stockItems = data.map(i => ({ ...i, current: i.stock_in - (i.stock_out || 0) }));
+    const low = stockItems.filter(i => i.current <= (i.threshold || 20)).sort((a, b) => a.current - b.current);
 
     if (low.length > 0) {
-      if(pulseDot) pulseDot.style.display = "block";
-      lowStockContainer.innerHTML = low.slice(0,5).map(i => `
+      if (pulseDot) pulseDot.style.display = "block";
+      lowStockContainer.innerHTML = low.slice(0, 5).map(i => `
         <div class="alert-item">
           <span>${escapeHtml(i.item)}</span>
           <span class="item-stock">! ${i.current} left (Thresh: ${i.threshold || 20})</span>
         </div>
       `).join("");
     } else {
-      if(pulseDot) pulseDot.style.display = "none";
+      if (pulseDot) pulseDot.style.display = "none";
       lowStockContainer.innerHTML = `<span>All items optimal.</span>`;
     }
-  } catch(e) {}
+  } catch (e) { }
 }
 
 function bindEvents() {
@@ -126,7 +179,7 @@ function bindEvents() {
     showToast("Comm-link cleared", "success");
   });
 
-  if(toggleDashboardBtn) {
+  if (toggleDashboardBtn) {
     toggleDashboardBtn.addEventListener("click", () => {
       floatingDashboard.classList.toggle("hidden");
     });
@@ -139,9 +192,9 @@ function bindEvents() {
 
   document.getElementById("exportBtn").addEventListener("click", async () => {
     try {
-      const res = await fetch("/api/inventory");
+      const res = await fetch("/api/inventory", { headers: getAuthHeader() });
       const data = await res.json();
-      
+
       if (!data || data.length === 0) {
         showToast("No data to export", "error");
         return;
@@ -170,7 +223,7 @@ function bindEvents() {
         a.href = url; a.download = "invenbot_backup.csv"; a.click(); URL.revokeObjectURL(url);
         showToast("Excel (CSV) exported successfully");
       }
-    } catch(e) { showToast("Export failed", "error"); }
+    } catch (e) { showToast("Export failed", "error"); }
   });
 
   // Action queries
@@ -197,7 +250,8 @@ async function handleSend() {
 
   try {
     const res = await fetch("/api/chat", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeader() },
       body: JSON.stringify({ message: msg })
     });
     const data = await res.json();
@@ -206,7 +260,7 @@ async function handleSend() {
     if (!res.ok) appendError(data.error || `Error ${res.status}`);
     else {
       appendBotResponse(data);
-      const acts = ["ADD_ITEM", "SELL_ITEM", "DELETE_ITEM", "UPDATE_PRICE"];
+      const acts = ["ADD_ITEM", "SELL_ITEM", "DELETE_ITEM", "UPDATE_PRICE", "SET_THRESHOLD", "RESET_INVENTORY"];
       if (acts.includes(data.action)) loadDashboardStats();
     }
   } catch (err) {
@@ -291,7 +345,7 @@ function buildTableCard(items, action) {
   const keys = Object.keys(items[0]);
   const card = document.createElement("div");
   card.className = "result-card";
-  
+
   const labels = {
     ADD_ITEM: "Item Logged", SELL_ITEM: "Sale Executed",
     DELETE_ITEM: "Data Purged", UPDATE_PRICE: "Price Sync",
@@ -301,19 +355,20 @@ function buildTableCard(items, action) {
     FILTER_DATE: "Date Filtered Analytics",
     SALES_HISTORY: "Sales Transaction History",
     STOCK_HISTORY: "Stock Received History",
-    SET_THRESHOLD: "Alert Threshold Updated"
+    SET_THRESHOLD: "Alert Threshold Updated",
+    RESET_INVENTORY: "System Purge"
   };
 
   card.innerHTML = `
     <div class="rc-header">
-      <div class="rc-label"><div class="dot"></div>${labels[action]||"Data Query"}</div>
+      <div class="rc-label"><div class="dot"></div>${labels[action] || "Data Query"}</div>
       <button class="icon-btn small" title="Copy Data" onclick="window.copyData(this, '${escapeHtml(JSON.stringify(items).replace(/'/g, "\\'"))}')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
       </button>
     </div>
     <div class="rc-table-wrap">
       <table>
-        <thead><tr>${keys.map(k=>`<th>${escapeHtml(k.replace(/_/g," ").toUpperCase())}</th>`).join("")}</tr></thead>
+        <thead><tr>${keys.map(k => `<th>${escapeHtml(k.replace(/_/g, " ").toUpperCase())}</th>`).join("")}</tr></thead>
         <tbody>
           ${items.map(row => `<tr>${keys.map(k => `<td class="${getCls(k)}">${fmt(k, row[k])}</td>`).join("")}</tr>`).join("")}
           ${buildSummary(keys, items)}
@@ -328,10 +383,10 @@ function buildSummary(keys, items) {
   const numKeys = keys.filter(k => typeof items[0][k] === "number");
   if (items.length <= 1 || numKeys.length === 0) return "";
   const totals = {};
-  items.forEach(r => numKeys.forEach(k => totals[k] = (totals[k]||0) + r[k]));
-  return `<tr class="summary-row">${keys.map((k,i) => {
-    if(i===0) return `<td>SYS_TOTAL</td>`;
-    if(numKeys.includes(k)) return `<td>${fmt(k, totals[k])}</td>`;
+  items.forEach(r => numKeys.forEach(k => totals[k] = (totals[k] || 0) + r[k]));
+  return `<tr class="summary-row">${keys.map((k, i) => {
+    if (i === 0) return `<td>SYS_TOTAL</td>`;
+    if (numKeys.includes(k)) return `<td>${fmt(k, totals[k])}</td>`;
     return `<td>—</td>`;
   }).join("")}</tr>`;
 }
@@ -359,9 +414,9 @@ function fmt(k, v) {
 }
 
 function escapeHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
-function formatTime() { return new Date().toLocaleTimeString("en-US", {hour12: false, hour: "2-digit", minute:"2-digit"}); }
+function formatTime() { return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" }); }
 function scrollBot() { chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: "smooth" }); }
-function removeEl(id) { const el = document.getElementById(id); if(el) el.remove(); }
+function removeEl(id) { const el = document.getElementById(id); if (el) el.remove(); }
 
 window.copyData = (btn, itemsStr) => {
   navigator.clipboard.writeText(JSON.stringify(JSON.parse(itemsStr), null, 2));
@@ -369,11 +424,11 @@ window.copyData = (btn, itemsStr) => {
   setTimeout(() => btn.style.color = "", 2000);
 };
 
-function showToast(msg, type="success") {
-  const e = document.querySelector(".toast"); if(e) e.remove();
+function showToast(msg, type = "success") {
+  const e = document.querySelector(".toast"); if (e) e.remove();
   const t = document.createElement("div"); t.className = `toast ${type}`;
-  t.innerHTML = `<div class="toast-icon">${type==="success"?"✓":"!"}</div>${escapeHtml(msg)}`;
+  t.innerHTML = `<div class="toast-icon">${type === "success" ? "✓" : "!"}</div>${escapeHtml(msg)}`;
   document.body.appendChild(t);
-  setTimeout(()=>t.classList.add("show"), 10);
-  setTimeout(()=>{ t.classList.remove("show"); setTimeout(()=>t.remove(), 300); }, 3000);
+  setTimeout(() => t.classList.add("show"), 10);
+  setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 300); }, 3000);
 }

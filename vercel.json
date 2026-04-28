@@ -10,6 +10,14 @@
       "use": "@vercel/static"
     },
     {
+      "src": "signin.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "signup.html",
+      "use": "@vercel/static"
+    },
+    {
       "src": "app.js",
       "use": "@vercel/static"
     },
