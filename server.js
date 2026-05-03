@@ -118,7 +118,7 @@ async function buildPrompt(userMsg, userId) {
   const inv = db.length > 0
     ? JSON.stringify(minimizedInv, null, 2)
     : "[ No items in inventory yet ]";
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toLocaleDateString('sv-SE');
   return `TODAY'S DATE is ${today}\nCURRENT INVENTORY:\n${inv}\n\nUSER MESSAGE: ${userMsg}`;
 }
 
@@ -146,7 +146,7 @@ async function executeAction(action, data, userId) {
 
         db[idx].stock_history.push({
           quantity: Number(data.quantity),
-          date: new Date().toISOString().split("T")[0]
+          date: new Date().toLocaleDateString('sv-SE')
         });
         await db[idx].save();
 
@@ -163,7 +163,7 @@ async function executeAction(action, data, userId) {
           // Initial date entry
           stock_history: [{
             quantity: Number(data.quantity),
-            date: new Date().toISOString().split("T")[0]
+            date: new Date().toLocaleDateString('sv-SE')
           }],
 
           sales_history: [] // keep empty initially
@@ -202,7 +202,7 @@ async function executeAction(action, data, userId) {
       db[idx].stock_out += qty;
       db[idx].quantity_sold += qty;
 
-      const today = new Date().toISOString().split("T")[0];
+      const today = new Date().toLocaleDateString('sv-SE');
       if (!db[idx].sales_history) db[idx].sales_history = [];
 
       db[idx].sales_history.push({
@@ -421,7 +421,7 @@ async function executeAction(action, data, userId) {
       break;
     }
     case "SALES_TODAY": {
-      const today = new Date().toISOString().split("T")[0];
+      const today = new Date().toLocaleDateString('sv-SE');
 
       tableData = db
         .map(item => {
@@ -597,10 +597,10 @@ async function tryLocalIntent(message, userId) {
   if (!startDate) {
     const today = new Date();
     if (/\btoday\b/.test(msg)) {
-      startDate = endDate = today.toISOString().split("T")[0];
+      startDate = endDate = today.toLocaleDateString('sv-SE');
     } else if (/\byesterday\b/.test(msg)) {
       const y = new Date(today); y.setDate(y.getDate() - 1);
-      startDate = endDate = y.toISOString().split("T")[0];
+      startDate = endDate = y.toLocaleDateString('sv-SE');
     }
   }
 
