@@ -118,7 +118,8 @@ async function buildPrompt(userMsg, userId) {
   const inv = db.length > 0
     ? JSON.stringify(minimizedInv, null, 2)
     : "[ No items in inventory yet ]";
-  return `CURRENT INVENTORY:\n${inv}\n\nUSER MESSAGE: ${userMsg}`;
+  const today = new Date().toISOString().split("T")[0];
+  return `TODAY'S DATE is ${today}\nCURRENT INVENTORY:\n${inv}\n\nUSER MESSAGE: ${userMsg}`;
 }
 
 async function executeAction(action, data, userId) {
